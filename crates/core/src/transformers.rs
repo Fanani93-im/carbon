@@ -336,8 +336,6 @@ pub fn unnest_parsed_instructions<T: InstructionDecoderCollection>(
 /// A `CarbonResult<TransactionStatusMeta>` representing the full transaction
 /// status with nested instructions, token balances, and rewards.
 ///
-/// # Notes
-///
 /// This function handles various metadata fields, including inner instructions,
 /// token balances, and rewards, providing a complete view of the transaction's
 /// effects.
@@ -348,6 +346,7 @@ pub fn transaction_metadata_from_original_meta(
         "transaction_metadata_from_original_meta(meta_original: {:?})",
         meta_original
     );
+
     Ok(TransactionStatusMeta {
         status: meta_original.status,
         fee: meta_original.fee,
@@ -356,7 +355,7 @@ pub fn transaction_metadata_from_original_meta(
         inner_instructions: Some(
             meta_original
                 .inner_instructions
-                .unwrap_or_else(std::vec::Vec::new)
+                .unwrap_or_else(Vec::new)
                 .iter()
                 .map(|inner_instruction_group| InnerInstructions {
                     index: inner_instruction_group.index,
@@ -366,9 +365,9 @@ pub fn transaction_metadata_from_original_meta(
                         .map(|ui_instruction| match ui_instruction {
                             UiInstruction::Compiled(compiled_ui_instruction) => {
                                 let decoded_data =
-                                    bs58::decode(compiled_ui_instruction.data.clone())
+                                    bs58::decode(&compiled_ui_instruction.data)
                                         .into_vec()
-                                        .unwrap_or_else(|_| vec![]);
+                                        .unwrap_or_default();
                                 InnerInstruction {
                                     instruction: CompiledInstruction {
                                         program_id_index: compiled_ui_instruction.program_id_index,
@@ -390,29 +389,37 @@ pub fn transaction_metadata_from_original_meta(
                                 }
                             }
                         })
-                        .collect::<Vec<InnerInstruction>>(),
+                        .collect(),
                 })
-                .collect::<Vec<InnerInstructions>>(),
+                .collect(),
         ),
         log_messages: Some(
             meta_original
                 .log_messages
-                .unwrap_or_else(std::vec::Vec::new),
+                .unwrap_or_else(Vec::new),
         ),
+        compute_units_consumed: meta_original
+            .compute_units_consumed
+            .map(|unit| unit)
+            .or(None),
+        cost_units: None,
         pre_token_balances: Some(
             meta_original
                 .pre_token_balances
-                .unwrap_or_else(std::vec::Vec::new)
+                .unwrap_or_else(Vec::new)
                 .iter()
-                .filter_map(|transaction_token_balance| {
-                    if let (OptionSerializer::Some(owner), OptionSerializer::Some(program_id)) = (
-                        transaction_token_balance.owner.as_ref(),
-                        transaction_token_balance.program_id.as_ref(),
+                .filter_map(|token_balance| {
+                    if let (
+                        OptionSerializer::Some(owner),
+                        OptionSerializer::Some(program_id),
+                    ) = (
+                        token_balance.owner.as_ref(),
+                        token_balance.program_id.as_ref(),
                     ) {
                         Some(TransactionTokenBalance {
-                            account_index: transaction_token_balance.account_index,
-                            mint: transaction_token_balance.mint.clone(),
-                            ui_token_amount: transaction_token_balance.ui_token_amount.clone(),
+                            account_index: token_balance.account_index,
+                            mint: token_balance.mint.clone(),
+                            ui_token_amount: token_balance.ui_token_amount.clone(),
                             owner: owner.to_string(),
                             program_id: program_id.to_string(),
                         })
@@ -420,22 +427,25 @@ pub fn transaction_metadata_from_original_meta(
                         None
                     }
                 })
-                .collect::<Vec<TransactionTokenBalance>>(),
+                .collect(),
         ),
         post_token_balances: Some(
             meta_original
                 .post_token_balances
-                .unwrap_or_else(std::vec::Vec::new)
+                .unwrap_or_else(Vec::new)
                 .iter()
-                .filter_map(|transaction_token_balance| {
-                    if let (OptionSerializer::Some(owner), OptionSerializer::Some(program_id)) = (
-                        transaction_token_balance.owner.as_ref(),
-                        transaction_token_balance.program_id.as_ref(),
+                .filter_map(|token_balance| {
+                    if let (
+                        OptionSerializer::Some(owner),
+                        OptionSerializer::Some(program_id),
+                    ) = (
+                        token_balance.owner.as_ref(),
+                        token_balance.program_id.as_ref(),
                     ) {
                         Some(TransactionTokenBalance {
-                            account_index: transaction_token_balance.account_index,
-                            mint: transaction_token_balance.mint.clone(),
-                            ui_token_amount: transaction_token_balance.ui_token_amount.clone(),
+                            account_index: token_balance.account_index,
+                            mint: token_balance.mint.clone(),
+                            ui_token_amount: token_balance.ui_token_amount.clone(),
                             owner: owner.to_string(),
                             program_id: program_id.to_string(),
                         })
@@ -443,21 +453,21 @@ pub fn transaction_metadata_from_original_meta(
                         None
                     }
                 })
-                .collect::<Vec<TransactionTokenBalance>>(),
+                .collect(),
         ),
         rewards: Some(
             meta_original
                 .rewards
-                .unwrap_or_else(std::vec::Vec::new)
+                .unwrap_or_else(Vec::new)
                 .iter()
-                .map(|rewards| Reward {
-                    pubkey: rewards.pubkey.clone(),
-                    lamports: rewards.lamports,
-                    post_balance: rewards.post_balance,
-                    reward_type: rewards.reward_type,
-                    commission: rewards.commission,
+                .map(|reward| Reward {
+                    pubkey: reward.pubkey.clone(),
+                    lamports: reward.lamports,
+                    post_balance: reward.post_balance,
+                    reward_type: reward.reward_type,
+                    commission: reward.commission,
                 })
-                .collect::<Vec<Reward>>(),
+                .collect(),
         ),
         loaded_addresses: {
             let loaded = meta_original
@@ -471,12 +481,12 @@ pub fn transaction_metadata_from_original_meta(
                     .writable
                     .iter()
                     .map(|w| Pubkey::from_str(w).unwrap_or_default())
-                    .collect::<Vec<Pubkey>>(),
+                    .collect(),
                 readonly: loaded
                     .readonly
                     .iter()
                     .map(|r| Pubkey::from_str(r).unwrap_or_default())
-                    .collect::<Vec<Pubkey>>(),
+                    .collect(),
             }
         },
         return_data: meta_original
@@ -485,10 +495,6 @@ pub fn transaction_metadata_from_original_meta(
                 program_id: return_data.program_id.parse().unwrap_or_default(),
                 data: return_data.data.0.as_bytes().to_vec(),
             }),
-        compute_units_consumed: meta_original
-            .compute_units_consumed
-            .map(|compute_unit_consumed| compute_unit_consumed)
-            .or(None),
     })
 }
 
